@@ -31,18 +31,20 @@
 
     <h2>Overview</h2>
     <p>
-      A two-player soccer game &mdash; modeled after the mobile game <em>Head Soccer</em> &mdash; that
-      my partner Ryan Kehtar-Navaz and I built on a TI MSPM0G3507 LaunchPad for our embedded systems
-      course. Each player controls their character's jump height with a slide-pot and kicks with a
-      button, played out on a 160&times;128 ST7735R LCD with sound effects driven off an onboard DAC.
-      It's the project on here that's most fun to actually play.
+      A two-player soccer game &mdash; modeled after the mobile game <em>Head Soccer</em> &mdash; that I
+      built on a TI MSPM0G3507 LaunchPad for my embedded systems course. I wrote the game engine: the
+      30&nbsp;Hz physics ISR, the gravity/jump model, collision detection between characters and the
+      ball, wall and goal detection, and the analog slide-pot/button input handling. Each player
+      controls their character's jump height with a slide-pot and kicks with a button, played out on a
+      160&times;128 ST7735R LCD with sound effects driven off an onboard DAC. It's the project on here
+      that's most fun to actually play.
     </p>
     <ul>
       <li>Real-time physics engine (gravity, jump arcs, character-vs-character and character-vs-ball collision, wall/goal detection) running in a 30&nbsp;Hz timer interrupt, decoupled from LCD rendering in the main loop</li>
       <li>Two analog slide-pots read via ADC for continuous jump-height control, plus two debounced push-buttons for kicks</li>
       <li>Kick/goal sound effects played back through a 5-bit DAC at 11&nbsp;kHz off digitized audio samples baked into C arrays</li>
       <li>Full English/Spanish bilingual UI &mdash; menus, countdown, score, and win/tie screens</li>
-      <li>Built on top of the course's ST7735 LCD, clock, timer, ADC, and DAC drivers; the game engine, physics, collision handling, and UI flow are ours</li>
+      <li>Built on top of the course's ST7735 LCD, clock, timer, ADC, and DAC drivers</li>
     </ul>
 
     <h2>Architecture</h2>
@@ -57,11 +59,13 @@
       that says it outright) is <em>no LCD output in interrupt service routines</em>.
     </p>
     <p>
-      Sound works the same way the physics does but simpler: <code>Sound_Start</code> hands a pointer
-      into one of the pre-recorded sample arrays (<code>Kick</code>, <code>Goal</code>) to a SysTick
-      interrupt running at 11&nbsp;kHz, which streams one byte per tick out to the DAC until the sample
-      runs out &mdash; so triggering a sound effect from game logic is just a matter of pointing the
-      ISR at a different buffer.
+      Sound follows the same pattern but simpler: <code>Sound_Start</code> hands a pointer into one of
+      the pre-recorded sample arrays (<code>Kick</code>, <code>Goal</code>) to a SysTick interrupt
+      running at 11&nbsp;kHz, which streams one byte per tick out to the DAC until the sample runs out.
+      The board only had the horsepower to run one sound at a time cleanly, so rather than route
+      through separate named triggers per effect, everything calls <code>Sound_Start</code> directly
+      with whichever buffer it needs &mdash; simpler, and it's what the hardware could actually keep up
+      with.
     </p>
 
     <h2>Physics Snippet</h2>
@@ -103,6 +107,11 @@ void checkcollisionwall(void){
 }</code></pre>
     <p>
       <a href="video-game-source.html">Full source for the game engine, physics, input, and sound modules</a>.
+    </p>
+
+    <p class="reference-note">
+      Built with my partner Ryan Kehtar-Navaz, who put together the sprite art, sound recordings, and
+      the demo video above.
     </p>
 
   </div>

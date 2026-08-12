@@ -1,0 +1,520 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FPGA Stopwatch — Full Source — Adrian Corrales</title>
+<link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="wrap">
+    <a class="name" href="../index.html">Adrian Corrales</a>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <a class="back-link" href="fpga-stopwatch.html">&larr; Back to FPGA-Based Programmable Stopwatch/Timer</a>
+
+  <div class="project-header">
+    <h1>Full Source — FPGA Stopwatch/Timer</h1>
+    <div class="meta">Verilog, Basys3 · April 2026</div>
+  </div>
+
+  <div class="project-body">
+
+    <p>
+      All six RTL modules and the pin constraints file, in full. See the
+      <a href="fpga-stopwatch.html">project page</a> for the architecture overview and how these
+      modules connect.
+    </p>
+
+    <h2>main_stopwatch.v <span class="file-note">— top level</span></h2>
+    <pre><code>`timescale 1ns / 1ps
+
+module main_stopwatch(
+    input clk,
+    input btn_start,
+    input btn_reset,
+    input [9:0] sw,
+    output reg [3:0] an,
+    output [6:0] seg,
+    output reg dp
+);
+
+    // internal wires
+    wire tick;
+    wire start_pulse, reset_pulse;
+    wire enable, load, c_up;
+    wire [3:0] load_sec_tens, load_sec_ones;
+    wire [3:0] load_ms_tens, load_ms_ones;
+    wire [3:0] sec_tens, sec_ones, ms_tens, ms_ones;
+    wire start, max;
+
+    // display refresh
+    reg [15:0] refresh_counter;
+    wire [1:0] digit;
+    reg [3:0] current;
+
+    assign digit = refresh_counter[15:14];
+
+    // clock divider for 10 ms tick
+    clockdiv u_clkdiv(
+        .clk(clk),
+        .reset(btn_reset),
+        .tick(tick)
+    );
+
+    // button pulse generators
+    button_pul u_start(
+        .clk(clk),
+        .btn(btn_start),
+        .pulse(start_pulse)
+    );
+
+    button_pul u_reset(
+        .clk(clk),
+        .btn(btn_reset),
+        .pulse(reset_pulse)
+    );
+
+    // controller
+    cont u_ctrl(
+        .clk(clk),
+        .reset(1'b0),
+        .start_pulse(start_pulse),
+        .reset_pulse(reset_pulse),
+        .mode(sw[9:8]),
+        .set_tens(sw[7:4]),
+        .set_ones(sw[3:0]),
+        .start(start),
+        .max(max),
+        .enable(enable),
+        .load(load),
+        .c_up(c_up),
+        .load_sec_tens(load_sec_tens),
+        .load_sec_ones(load_sec_ones),
+        .load_ms_tens(load_ms_tens),
+        .load_ms_ones(load_ms_ones)
+    );
+
+    // time counter
+    time_counter u_counter(
+        .clk(clk),
+        .tick(tick),
+        .reset(1'b0),
+        .enable(enable),
+        .c_up(c_up),
+        .load(load),
+        .sec_tens_in(load_sec_tens),
+        .sec_ones_in(load_sec_ones),
+        .ms_tens_in(load_ms_tens),
+        .ms_ones_in(load_ms_ones),
+        .sec_tens(sec_tens),
+        .sec_ones(sec_ones),
+        .ms_tens(ms_tens),
+        .ms_ones(ms_ones),
+        .start(start),
+        .max(max)
+    );
+
+    // display refresh counter
+    always @(posedge clk) begin
+        refresh_counter &lt;= refresh_counter + 1;
+    end
+
+    // digit select logic
+    always @(*) begin
+        case(digit)
+            2'b00: begin
+                an = 4'b1110;
+                current = ms_ones;
+                dp = 1'b1;
+            end
+
+            2'b01: begin
+                an = 4'b1101;
+                current = ms_tens;
+                dp = 1'b1;   // decimal point here
+            end
+
+            2'b10: begin
+                an = 4'b1011;
+                current = sec_ones;
+                dp = 1'b0;
+            end
+
+            2'b11: begin
+                an = 4'b0111;
+                current = sec_tens;
+                dp = 1'b1;
+            end
+        endcase
+    end
+
+    // 7-segment decoder
+    val_to_7seg u_seg(
+        .val(current),
+        .seg(seg)
+    );
+
+endmodule</code></pre>
+
+    <h2>cont.v <span class="file-note">— controller FSM</span></h2>
+    <pre><code>`timescale 1ns / 1ps
+
+
+module cont(
+ input clk,
+    input reset,
+    input start_pulse,
+    input reset_pulse,
+    input [1:0] mode,
+    input [3:0] set_tens,
+    input [3:0] set_ones,
+    input start,
+    input max,
+
+    output reg enable,
+    output reg load,
+    output reg c_up,
+    output reg [3:0] load_sec_tens,
+    output reg [3:0] load_sec_ones,
+    output reg [3:0] load_ms_tens,
+    output reg [3:0] load_ms_ones
+);
+
+    reg [1:0] state, next_state;
+
+    localparam
+    done    = 2'b00,
+    continue = 2'b01,
+    stop  = 2'b10;
+
+    // state register
+    always @(posedge clk or posedge reset) begin
+        if (reset)
+            state &lt;= done;
+        else
+            state &lt;= next_state;
+    end
+
+    // mode decode
+    always @(*) begin
+        case(mode)
+            2'b00: begin
+                c_up = 1'b1;          // count up
+                load_sec_tens = 4'b0000;
+                load_sec_ones = 4'b0000;
+                load_ms_tens = 4'b0000;
+                load_ms_ones = 4'b0000;
+            end
+
+            2'b01: begin
+                c_up = 1'b0;          // count down
+                load_sec_tens = 4'b1001;
+                load_sec_ones = 4'b1001;
+                load_ms_tens = 4'b1001;
+                load_ms_ones = 4'b1001;
+            end
+
+            2'b10: begin
+                c_up = 1'b1;          // count up
+                load_sec_tens = set_tens;
+                load_sec_ones = set_ones;
+                load_ms_tens = 4'b0000;
+                load_ms_ones = 4'b0000;
+            end
+
+            2'b11: begin
+                c_up = 1'b0;          // count down
+                load_sec_tens = set_tens;
+                load_sec_ones = set_ones;
+                load_ms_tens = 4'b0000;
+                load_ms_ones = 4'b0000;
+            end
+        endcase
+    end
+
+    // next-state logic
+    always @(*) begin
+        next_state = state;
+
+        case(state)
+            done: begin
+                if (start_pulse)
+                    next_state = continue;
+            end
+
+            continue: begin
+                if (reset_pulse)
+                    next_state = done;
+                else if (start_pulse)
+                    next_state = stop;
+                else if ((c_up == 1'b0 &amp;&amp; start) || (c_up == 1'b1 &amp;&amp; max))
+                    next_state = stop;
+            end
+
+            stop: begin
+                if (reset_pulse)
+                    next_state = done;
+                else if (start_pulse)
+                    next_state = continue;
+            end
+        endcase
+    end
+
+    // output logic
+    always @(*) begin
+        enable = (state == continue);
+        load   = reset_pulse;
+    end
+
+endmodule</code></pre>
+
+    <h2>time_counter.v <span class="file-note">— BCD up/down counter</span></h2>
+    <pre><code>`timescale 1ns / 1ps
+
+
+module time_counter(
+    input clk,
+    input tick,
+    input reset,
+    input enable,
+    input c_up,
+    input load,
+    input [3:0] sec_tens_in,
+    input [3:0] sec_ones_in,
+    input [3:0] ms_tens_in,
+    input [3:0] ms_ones_in,
+    output reg [3:0] sec_tens,
+    output reg [3:0] sec_ones,
+    output reg [3:0] ms_tens,
+    output reg [3:0] ms_ones,
+    output start,
+    output max
+);
+assign start = (sec_tens == 0 &amp;&amp; sec_ones == 0 &amp;&amp; ms_tens == 0 &amp;&amp; ms_ones == 0);
+assign max  = (sec_tens == 9 &amp;&amp; sec_ones == 9 &amp;&amp; ms_tens == 9 &amp;&amp; ms_ones == 9);
+
+always @(posedge clk)
+begin
+    if (reset) begin
+        sec_tens &lt;= 0;
+        sec_ones &lt;= 0;
+        ms_tens &lt;= 0;
+        ms_ones &lt;= 0;
+    end
+    else if (load) begin
+        sec_tens &lt;= sec_tens_in;
+        sec_ones &lt;= sec_ones_in;
+        ms_tens  &lt;= ms_tens_in;
+        ms_ones  &lt;= ms_ones_in;
+    end
+    else if (tick &amp;&amp; enable) begin
+        if (c_up) begin
+            if (sec_tens == 9 &amp;&amp; sec_ones == 9 &amp;&amp; ms_tens == 9 &amp;&amp; ms_ones == 9) begin
+            end
+            else if (ms_ones == 9) begin
+                ms_ones &lt;= 0;
+                if (ms_tens == 9) begin
+                    ms_tens &lt;= 0;
+                    if (sec_ones == 9) begin
+                        sec_ones &lt;= 0;
+                        sec_tens &lt;= sec_tens + 1;
+                    end
+                    else sec_ones &lt;= sec_ones + 1;
+                end
+                else ms_tens &lt;= ms_tens + 1;
+            end
+            else ms_ones &lt;= ms_ones + 1;
+        end
+        else begin
+            if (sec_tens == 0 &amp;&amp; sec_ones == 0 &amp;&amp; ms_tens == 0 &amp;&amp; ms_ones == 0) begin
+            end
+            else if (ms_ones == 0) begin
+                ms_ones &lt;= 9;
+                if (ms_tens == 0) begin
+                    ms_tens &lt;= 9;
+                    if (sec_ones == 0) begin
+                        sec_ones &lt;= 9;
+                        sec_tens &lt;= sec_tens - 1;
+                    end
+                    else sec_ones &lt;= sec_ones - 1;
+                end
+                else ms_tens &lt;= ms_tens - 1;
+            end
+            else ms_ones &lt;= ms_ones - 1;
+        end
+    end
+end
+
+endmodule</code></pre>
+
+    <h2>clockdiv.v <span class="file-note">— 100 MHz &rarr; 10 ms tick</span></h2>
+    <pre><code>`timescale 1ns / 1ps
+module clockdiv(
+    input clk,
+    input reset,
+    output reg tick
+);
+    reg [19:0] count;
+
+    always @(posedge clk)
+    begin
+        if (reset) begin
+            count &lt;= 0;
+            tick &lt;= 0;
+        end
+        else if (count == 999999) begin
+            count &lt;= 0;
+            tick &lt;= 1;
+        end
+        else begin
+            count &lt;= count + 1;
+            tick &lt;= 0;
+        end
+    end
+endmodule</code></pre>
+
+    <h2>button_pul.v <span class="file-note">— button edge detector</span></h2>
+    <pre><code>`timescale 1ns / 1ps
+
+
+module button_pul(
+    input clk,
+    input btn,
+    output pulse
+);
+    reg action;
+
+    always @(posedge clk) begin
+        action &lt;= btn;
+    end
+
+    assign pulse = btn &amp; ~action;
+endmodule</code></pre>
+
+    <h2>val_to_7seg.v <span class="file-note">— BCD to 7-segment decoder</span></h2>
+    <pre><code>`timescale 1ns / 1ps
+
+
+module val_to_7seg(
+     input [3:0] val,
+     output reg [6:0] seg
+);
+
+    always @(*) begin
+        case(val)
+            4'b0000: seg = 7'b1000000;
+            4'b0001: seg = 7'b1111001;
+            4'b0010: seg = 7'b0100100;
+            4'b0011: seg = 7'b0110000;
+            4'b0100: seg = 7'b0011001;
+            4'b0101: seg = 7'b0010010;
+            4'b0110: seg = 7'b0000010;
+            4'b0111: seg = 7'b1111000;
+            4'b1000: seg = 7'b0000000;
+            4'b1001: seg = 7'b0010000;
+        endcase
+    end
+
+endmodule</code></pre>
+
+    <h2>Basys3_Master.xdc <span class="file-note">— pin constraints</span></h2>
+    <pre><code>## Clock
+set_property PACKAGE_PIN W5 [get_ports clk]
+set_property IOSTANDARD LVCMOS33 [get_ports clk]
+create_clock -add -name sys_clk_pin -period 10.00 -waveform {0 5} [get_ports clk]
+
+## Switches
+set_property PACKAGE_PIN V17 [get_ports {sw[0]}]
+set_property IOSTANDARD LVCMOS33 [get_ports {sw[0]}]
+
+set_property PACKAGE_PIN V16 [get_ports {sw[1]}]
+set_property IOSTANDARD LVCMOS33 [get_ports {sw[1]}]
+
+set_property PACKAGE_PIN W16 [get_ports {sw[2]}]
+set_property IOSTANDARD LVCMOS33 [get_ports {sw[2]}]
+
+set_property PACKAGE_PIN W17 [get_ports {sw[3]}]
+set_property IOSTANDARD LVCMOS33 [get_ports {sw[3]}]
+
+set_property PACKAGE_PIN W15 [get_ports {sw[4]}]
+set_property IOSTANDARD LVCMOS33 [get_ports {sw[4]}]
+
+set_property PACKAGE_PIN V15 [get_ports {sw[5]}]
+set_property IOSTANDARD LVCMOS33 [get_ports {sw[5]}]
+
+set_property PACKAGE_PIN W14 [get_ports {sw[6]}]
+set_property IOSTANDARD LVCMOS33 [get_ports {sw[6]}]
+
+set_property PACKAGE_PIN W13 [get_ports {sw[7]}]
+set_property IOSTANDARD LVCMOS33 [get_ports {sw[7]}]
+
+set_property PACKAGE_PIN V2 [get_ports {sw[8]}]
+set_property IOSTANDARD LVCMOS33 [get_ports {sw[8]}]
+
+set_property PACKAGE_PIN T3 [get_ports {sw[9]}]
+set_property IOSTANDARD LVCMOS33 [get_ports {sw[9]}]
+
+## 7-segment display
+set_property PACKAGE_PIN W7 [get_ports {seg[0]}]
+set_property IOSTANDARD LVCMOS33 [get_ports {seg[0]}]
+
+set_property PACKAGE_PIN W6 [get_ports {seg[1]}]
+set_property IOSTANDARD LVCMOS33 [get_ports {seg[1]}]
+
+set_property PACKAGE_PIN U8 [get_ports {seg[2]}]
+set_property IOSTANDARD LVCMOS33 [get_ports {seg[2]}]
+
+set_property PACKAGE_PIN V8 [get_ports {seg[3]}]
+set_property IOSTANDARD LVCMOS33 [get_ports {seg[3]}]
+
+set_property PACKAGE_PIN U5 [get_ports {seg[4]}]
+set_property IOSTANDARD LVCMOS33 [get_ports {seg[4]}]
+
+set_property PACKAGE_PIN V5 [get_ports {seg[5]}]
+set_property IOSTANDARD LVCMOS33 [get_ports {seg[5]}]
+
+set_property PACKAGE_PIN U7 [get_ports {seg[6]}]
+set_property IOSTANDARD LVCMOS33 [get_ports {seg[6]}]
+
+## Decimal point
+set_property PACKAGE_PIN V7 [get_ports dp]
+set_property IOSTANDARD LVCMOS33 [get_ports dp]
+
+## Anodes
+set_property PACKAGE_PIN U2 [get_ports {an[0]}]
+set_property IOSTANDARD LVCMOS33 [get_ports {an[0]}]
+
+set_property PACKAGE_PIN U4 [get_ports {an[1]}]
+set_property IOSTANDARD LVCMOS33 [get_ports {an[1]}]
+
+set_property PACKAGE_PIN V4 [get_ports {an[2]}]
+set_property IOSTANDARD LVCMOS33 [get_ports {an[2]}]
+
+set_property PACKAGE_PIN W4 [get_ports {an[3]}]
+set_property IOSTANDARD LVCMOS33 [get_ports {an[3]}]
+
+## Buttons
+set_property PACKAGE_PIN U18 [get_ports btn_start]
+set_property IOSTANDARD LVCMOS33 [get_ports btn_start]
+
+set_property PACKAGE_PIN T18 [get_ports btn_reset]
+set_property IOSTANDARD LVCMOS33 [get_ports btn_reset]</code></pre>
+
+  </div>
+
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    &copy; 2026 Adrian Corrales
+  </div>
+</footer>
+
+</body>
+</html>

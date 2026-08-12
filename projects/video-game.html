@@ -23,9 +23,10 @@
     <div class="meta">C, MSPM0G3507 LaunchPad · Nov. 2023 &ndash; Apr. 2024</div>
   </div>
 
-  <div class="video-embed">
-    <iframe src="https://www.youtube.com/embed/Y0ssCxQxQ1Y?list=PL81OK-EdkwWjtjRoWOBs9bl8cBwKVFnRh" title="Gameplay demo" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
-  </div>
+  <a class="video-thumb-link" href="https://www.youtube.com/watch?v=Y0ssCxQxQ1Y&list=PL81OK-EdkwWjtjRoWOBs9bl8cBwKVFnRh" target="_blank" rel="noopener">
+    <img class="media-full" src="https://img.youtube.com/vi/Y0ssCxQxQ1Y/hqdefault.jpg" alt="Gameplay screenshot from the two-player soccer game — click to watch the gameplay video on YouTube">
+    <span class="video-thumb-label">&#9654; Watch gameplay video on YouTube</span>
+  </a>
 
   <div class="project-body">
 
@@ -36,8 +37,7 @@
       30&nbsp;Hz physics ISR, the gravity/jump model, collision detection between characters and the
       ball, wall and goal detection, and the analog slide-pot/button input handling. Each player
       controls their character's jump height with a slide-pot and kicks with a button, played out on a
-      160&times;128 ST7735R LCD with sound effects driven off an onboard DAC. It's the project on here
-      that's most fun to actually play.
+      160&times;128 ST7735R LCD with sound effects driven off an onboard DAC.
     </p>
     <ul>
       <li>Real-time physics engine (gravity, jump arcs, character-vs-character and character-vs-ball collision, wall/goal detection) running in a 30&nbsp;Hz timer interrupt, decoupled from LCD rendering in the main loop</li>

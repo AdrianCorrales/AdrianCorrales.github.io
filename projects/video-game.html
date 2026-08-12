@@ -20,31 +20,90 @@
 
   <div class="project-header">
     <h1>C-Based Video Game</h1>
-    <div class="meta">C, Assembly, TI Microcontroller · March–April 2024</div>
+    <div class="meta">C, MSPM0G3507 LaunchPad · Nov. 2023 &ndash; Apr. 2024</div>
   </div>
 
-  <div class="media-placeholder">
-    [ Gameplay video/GIF ]
+  <div class="video-embed">
+    <iframe src="https://www.youtube.com/embed/Y0ssCxQxQ1Y?list=PL81OK-EdkwWjtjRoWOBs9bl8cBwKVFnRh" title="Gameplay demo" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
   </div>
 
   <div class="project-body">
 
     <h2>Overview</h2>
+    <p>
+      A two-player soccer game &mdash; modeled after the mobile game <em>Head Soccer</em> &mdash; that
+      my partner Ryan Kehtar-Navaz and I built on a TI MSPM0G3507 LaunchPad for our embedded systems
+      course. Each player controls their character's jump height with a slide-pot and kicks with a
+      button, played out on a 160&times;128 ST7735R LCD with sound effects driven off an onboard DAC.
+      It's the project on here that's most fun to actually play.
+    </p>
     <ul>
-      <li>Developed a soccer game modeled after the mobile game <em>Head Soccer</em></li>
-      <li>Wrote over 500 lines of code in C and Assembly on a TI microcontroller</li>
-      <li>Implemented a custom I/O interface using buttons, slide-pots, speakers, and a display</li>
+      <li>Real-time physics engine (gravity, jump arcs, character-vs-character and character-vs-ball collision, wall/goal detection) running in a 30&nbsp;Hz timer interrupt, decoupled from LCD rendering in the main loop</li>
+      <li>Two analog slide-pots read via ADC for continuous jump-height control, plus two debounced push-buttons for kicks</li>
+      <li>Kick/goal sound effects played back through a 5-bit DAC at 11&nbsp;kHz off digitized audio samples baked into C arrays</li>
+      <li>Full English/Spanish bilingual UI &mdash; menus, countdown, score, and win/tie screens</li>
+      <li>Built on top of the course's ST7735 LCD, clock, timer, ADC, and DAC drivers; the game engine, physics, collision handling, and UI flow are ours</li>
     </ul>
 
-    <div class="todo-note">
-      TODO: replace with real content — a gameplay video/GIF and a photo of the physical I/O setup
-      (buttons/slide-pots/display/speaker). This is your most "fun" project — let photos carry it.
-    </div>
+    <h2>Architecture</h2>
+    <p>
+      The design splits cleanly into two halves that never touch each other directly: a 30&nbsp;Hz
+      interrupt service routine (<code>TIMG12_IRQHandler</code>) that owns all the physics &mdash;
+      sampling the slide-pots, reading the buttons, integrating position and velocity, and resolving
+      collisions &mdash; and the main loop, which owns everything that touches the LCD. A single
+      semaphore flag (<code>positionflag</code>) hands control from one to the other each frame. That
+      split exists for a real reason: SPI writes to the LCD are slow enough that doing them inside the
+      physics ISR would stall the timing the game engine depends on, so the rule (there's a comment
+      that says it outright) is <em>no LCD output in interrupt service routines</em>.
+    </p>
+    <p>
+      Sound works the same way the physics does but simpler: <code>Sound_Start</code> hands a pointer
+      into one of the pre-recorded sample arrays (<code>Kick</code>, <code>Goal</code>) to a SysTick
+      interrupt running at 11&nbsp;kHz, which streams one byte per tick out to the DAC until the sample
+      runs out &mdash; so triggering a sound effect from game logic is just a matter of pointing the
+      ISR at a different buffer.
+    </p>
 
-    <h2>Hardware Setup</h2>
-    <div class="media-placeholder">
-      [ Photo of physical I/O setup ]
-    </div>
+    <h2>Physics Snippet</h2>
+    <p>
+      Jump physics and ball-wall collision response, called every frame from the 30&nbsp;Hz ISR:
+    </p>
+    <pre><code>void JumpLeft(void){
+    if (leftb == 1){
+        jumpflagl = 1;
+        vxl = 5;
+    }
+}
+
+void gravityl(void){
+    if (jumpflagl == 1){
+        vxl = vxl - 1;
+        leftb = 0;
+        if (xl &lt;= 10){
+            vxl = 0;
+            xl = 10;
+            jumpflagl = 0;
+        }
+    }
+}
+
+void checkcollisionwall(void){
+    if(xBall &lt;= 15){
+        collisionflag = floorcollision;
+    }
+    if(xBall &gt;= 128){
+        collisionflag = wallcollision;
+    }
+    if(yBall &gt;= 160){
+        collisionflag = wallcollision;
+    }
+    if(yBall &lt;= 0){
+        collisionflag = wallcollision;
+    }
+}</code></pre>
+    <p>
+      <a href="video-game-source.html">Full source for the game engine, physics, input, and sound modules</a>.
+    </p>
 
   </div>
 

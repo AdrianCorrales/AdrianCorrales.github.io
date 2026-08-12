@@ -1,0 +1,1318 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>C-Based Video Game — Full Source — Adrian Corrales</title>
+<link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="wrap">
+    <a class="name" href="../index.html">Adrian Corrales</a>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <a class="back-link" href="video-game.html">&larr; Back to C-Based Video Game</a>
+
+  <div class="project-header">
+    <h1>Full Source — C-Based Video Game</h1>
+    <div class="meta">C, MSPM0G3507 LaunchPad</div>
+  </div>
+
+  <div class="project-body">
+
+    <p>
+      The game engine, physics, input, and sound modules Ryan and I wrote, in full. Built on top of
+      the course's ST7735 LCD, clock, timer, ADC, and DAC drivers, which aren't reproduced here. See
+      the <a href="video-game.html">project page</a> for the gameplay video and architecture overview.
+    </p>
+
+    <h2>Lab9Main.c <span class="file-note">&mdash; top-level: 30 Hz physics ISR + game loop (test/demo entry points omitted)</span></h2>
+    <pre><code>// Lab9Main.c
+// Runs on MSPM0G3507
+// Lab 9 ECE319K
+// Ryan Kehtar-Navaz &amp; Adrian Corrales
+// Last Modified: 12/31/2023
+
+#include &lt;stdio.h&gt;
+#include &lt;stdint.h&gt;
+#include &lt;ti/devices/msp/msp.h&gt;
+#include "../inc/ST7735.h"
+#include "../inc/Clock.h"
+#include "../inc/LaunchPad.h"
+#include "../inc/TExaS.h"
+#include "../inc/Timer.h"
+#include "../inc/ADC1.h"
+#include "../inc/DAC5.h"
+#include "SmallFont.h"
+#include "LED.h"
+#include "Switch.h"
+#include "Sound.h"
+#include "images/images.h"
+#include "Arrays.h"
+#include "Functions.h"
+
+// ****note to ECE319K students****
+// the data sheet says the ADC does not work when clock is 80 MHz
+// however, the ADC seems to work on my boards at 80 MHz
+// I suggest you try 80MHz, but if it doesn't work, switch to 40MHz
+void PLL_Init(void){ // set phase lock loop (PLL)
+  // Clock_Init40MHz(); // run this line for 40MHz
+  Clock_Init80MHz(0);   // run this line for 80MHz
+}
+
+uint32_t M=1;
+uint32_t Random32(void){
+  M = 1664525*M+1013904223;
+  return M;
+}
+uint32_t Random(uint32_t n){
+  return (Random32()&gt;&gt;16)%n;
+}
+
+
+
+int32_t rightb = 0;
+int32_t leftb = 0;
+int32_t rightsp = 0;
+int32_t leftsp = 0;
+int32_t vxr;
+int32_t vxl;
+int32_t vyr;
+int32_t vyl;
+int32_t oldxr=10;
+int32_t oldyr=130;
+int32_t oldxl=10;
+int32_t oldyl=50;
+int32_t xBall=85, yBall=85, oldxBall=85, oldyBall=85;
+int32_t coverxr, coveryr, coverxl, coveryl;
+int32_t xr = 10;
+int32_t yr = 130;
+int32_t xl = 10;
+int32_t yl = 50;
+uint8_t positionflag = 0, BackgroundFlagL=0, BackgroundFlagR=0, BackgroundFlagBall=0;
+uint8_t jumpflagl = 0;
+uint8_t jumpflagr = 0;
+uint8_t lvlflag = 0, leftchanged=0, rightchanged=0;
+uint8_t languageflag = 0;
+uint32_t temp, LeftScore=0, RightScore=0;
+int32_t timer=121;
+#define KICKCOUNT 2304
+#define GOALCOUNT 6735
+
+#define floorcollision 4;
+#define wallcollision 3;
+#define charactercollisionright 2;
+#define charactercollisionleft 1;
+#define goalcollision 5;
+#define charactercollisiontop 6;
+int32_t ballvx;
+int32_t ballvy;
+uint8_t collisionflag = 0;
+uint8_t charactercollisionflag=0;
+
+uint8_t timerfortimer=30, timerflag=0;
+
+const char *EnglishStart = "Click Any Button to Start";
+const char *SpanishStart = "Elige Cualquier Bot\u00F3n para Comenzar";
+
+// games  engine runs at 30Hz
+void TIMG12_IRQHandler(void){uint32_t pos,msg;
+  if((TIMG12-&gt;CPU_INT.IIDX) == 1){ // this will acknowledge
+    GPIOB-&gt;DOUTTGL31_0 = GREEN; // toggle PB27 (minimally intrusive debugging)
+    GPIOB-&gt;DOUTTGL31_0 = GREEN; // toggle PB27 (minimally intrusive debugging)
+// game engine goes here
+    // 1) sample slide pot
+
+    timerfortimer--;
+    if(timerfortimer==0){
+        timerfortimer=30;
+        timerflag=1;
+    }
+
+    rightsp = ADC1in();
+    leftsp = ADC0in();
+    vyr = LateralVelocity(rightsp);
+    vyl = LateralVelocity(leftsp);
+    Switch_In(); // 2) read input switches
+    // 2) read input switches
+    // 3) move sprites
+
+    if(BackgroundFlagL){
+        oldyl = yl;
+        oldxl = xl;
+        BackgroundFlagL=0;
+    }
+    if(BackgroundFlagR){
+        oldyr = yr;
+        oldxr = xr;
+        BackgroundFlagR=0;
+    }
+    if(BackgroundFlagBall){
+        oldxBall = xBall;
+        oldyBall = yBall;
+        BackgroundFlagBall=0;
+    }
+    MoveLeft();
+    MoveRight();
+
+    checkcharactercollision();
+    collisionflag=0;
+    checkcollisionc(xr, yr);
+        if(charactercollisionflag != 1){
+            if(collisionflag&gt;0){
+                charactercollisionflag=2;
+            }
+        }
+
+    checkcollisionc(xl, yl);
+        if (charactercollisionflag !=2){
+            if(collisionflag&gt;0){
+                charactercollisionflag=1;
+            }
+        }
+
+    gravityl();
+    gravityr();
+    JumpLeft();
+    JumpRight();
+
+    checkcollisionwall();
+    ballvelocity();
+    moveball();
+    charactercollisionflag = 0;
+    positionflag=1;
+
+    // 4) start sounds
+    // 5) set semaphore
+    // NO LCD OUTPUT IN INTERRUPT SERVICE ROUTINES
+    GPIOB-&gt;DOUTTGL31_0 = GREEN; // toggle PB27 (minimally intrusive debugging)
+  }
+}
+
+uint8_t TExaS_LaunchPadLogicPB27PB26(void){
+  return (0x80|((GPIOB-&gt;DOUT31_0&gt;&gt;26)&amp;0x03));
+}
+
+
+
+// ALL ST7735 OUTPUT MUST OCCUR IN MAIN
+ int main(void){ // final main
+  __disable_irq();
+  PLL_Init(); // set bus speed
+  LaunchPad_Init();
+  ST7735_InitPrintf();
+    //note: if you colors are weird, see different options for
+    // ST7735_InitR(INITR_REDTAB); inside ST7735_InitPrintf()
+  ADC1init();     //PB18 = ADC1 channel 5, slidepot
+  ADC0init();     //PB18 = ADC1 channel 5, slidepot
+  Switch_Init(); // initialize switches
+  LED_Init();    // initialize LED
+  Sound_Init();  // initialize sound
+  TExaS_Init(0,0,&amp;TExaS_LaunchPadLogicPB27PB26); // PB27 and PB26
+    // initialize interrupts on TimerG12 at 30 Hz
+  TimerG12_IntArm(80000000/30,2);
+  // initialize all data structures
+  __enable_irq();
+
+  while(1){
+      TimerG12_IntArm(80000000/30,2);
+      ST7735_FillScreen(0x0000);
+      ST7735_SetCursor(1, 1);
+      ST7735_OutString("Click Left for");
+      ST7735_SetCursor(1, 2);
+      ST7735_OutString("English");
+      ST7735_SetCursor(1, 4);
+      ST7735_OutString("Click Right for");
+      ST7735_SetCursor(1, 5);
+      ST7735_OutString("Spanish");
+
+      while(lvlflag == 0){
+          if(leftb == 1){
+              languageflag = 1;
+              lvlflag = 2;
+          }
+          if(rightb == 1){
+              languageflag = 2;
+              lvlflag = 2;
+          }
+      }
+
+      ST7735_DrawBitmap(0,160,Background,128,160);
+      PrintTitle();
+      if(languageflag==1){
+          ClickButtonEng();
+      }else{
+          ClickButtonSpn();
+      }
+
+      while(lvlflag==2){
+          if((leftb==1)||(rightb==1)){
+              lvlflag=1;
+          }
+      }
+
+      timer=121;
+      LeftScore=0;
+      RightScore=0;
+      ST7735_DrawBitmap(0,160,Background,128,160);
+      Countdown();
+      ST7735_DrawBitmap(0,160,Background,128,160);
+      InitPositions();
+
+      while(lvlflag == 1){
+          SmallFont_OutHorizontal(LeftScore, 122, 30);
+          SmallFont_OutHorizontal(RightScore, 122, 120);
+          if(timerflag==1){
+              timerflag=0;
+              timer--;
+              SmallFont_OutHorizontal(timer, 122, 75);
+          }
+
+          while(positionflag == 0){}// wait for semaphore
+          positionflag = 0;
+
+          DrawSprite(oldxl, oldyl, xl, yl, Messi, 40,22);
+          BackgroundFlagL=1;
+
+          DrawSprite(oldxr, oldyr, xr, yr, Holt, 40,22);
+          BackgroundFlagR=1;
+
+          DrawSprite(oldxBall, oldyBall, xBall, yBall, Ball, 10, 10);
+          BackgroundFlagBall=1;
+
+          if(((yBall&lt;=20)&amp;&amp;(xBall &gt;= 10)&amp;&amp;(xBall &lt;= 80))||((yBall&gt;=150)&amp;&amp;(xBall &gt;= 10)&amp;&amp;(xBall &lt;= 80))){
+              TimerG12_IntArm(0,2);
+              Sound_Start(Goal, GOALCOUNT);
+              ST7735_DrawBitmap(0,160,Background,128,160);
+
+            if(((yBall&lt;=20)&amp;&amp;(xBall &gt;= 10)&amp;&amp;(xBall &lt;= 80))){
+              RightScore++;
+            }else{
+              LeftScore++;
+            }
+
+            if(languageflag==1){
+                PrintEngGoal();
+            }else{
+                PrintSpnGoal();
+            }
+
+                ST7735_DrawBitmap(0,160,Background,128,160);
+                InitPositions();
+                SmallFont_OutHorizontal(timer, 122, 75);
+                TimerG12_IntArm(80000000/30,2);
+
+            }
+
+
+
+
+if((collisionflag == 1)||(collisionflag ==2)||(collisionflag == 6)){
+     Sound_Start(Kick, KICKCOUNT);
+}
+
+
+
+
+
+    if(timer &lt;= 0){
+          TimerG12_IntArm(0,2);
+        ST7735_DrawBitmap(0,160,Background,128,160);
+        Sound_Start(Goal, GOALCOUNT);
+        if(LeftScore&gt;RightScore){
+            if(languageflag==1){
+                PrintOneWonEng();
+            }else{
+                PrintOneWonSpn();
+            }
+        }
+        if(RightScore&gt;LeftScore){
+            if(languageflag==1){
+                PrintTwoWonEng();
+            }else{
+                PrintTwoWonSpn();
+            }
+        }
+        if(RightScore==LeftScore){
+            if(languageflag==1){
+                PrintTieEng();
+            }else{
+                PrintTieSpn();
+            }
+        }
+        lvlflag=0;
+    }
+
+     // clear semaphore
+     // update ST7735R
+     // check for end game or level switch
+        }
+     }
+  }</code></pre>
+
+    <h2>Functions.h <span class="file-note">&mdash; shared globals and function declarations</span></h2>
+    <pre><code>/*
+ * Functions.h
+ *
+ *  Created on: Apr 21, 2024
+ *      Author: ryank
+ */
+
+#ifndef FUNCTIONS_H_
+#define FUNCTIONS_H_
+
+extern int32_t rightb;
+extern int32_t leftb;
+extern int32_t rightsp;
+extern int32_t leftsp;
+extern int32_t vxr;
+extern int32_t vxl;
+extern int32_t vyr;
+extern int32_t vyl;
+extern int32_t oldxr;
+extern int32_t oldyr;
+extern int32_t oldxl;
+extern int32_t oldyl;
+extern int32_t xBall, yBall, oldxBall, oldyBall;
+extern int32_t coverxr, coveryr, coverxl, coveryl;
+extern int32_t xr;
+extern int32_t yr;
+extern int32_t xl;
+extern int32_t yl;
+extern uint8_t positionflag, BackgroundFlagL, BackgroundFlagR, BackgroundFlagBall;
+extern uint8_t jumpflagl;
+extern uint8_t jumpflagr;
+extern uint8_t lvlflag, leftchanged, rightchanged;
+extern uint8_t languageflag;
+extern uint32_t temp, LeftScore, RightScore;
+extern int32_t timer;
+extern int32_t ballvx;
+extern int32_t ballvy;
+extern uint8_t collisionflag;
+extern uint8_t charactercollisionflag;
+
+int32_t LateralVelocity(int32_t n);
+void MoveLeft(void);
+void MoveRight(void);
+void JumpLeft(void);
+void JumpRight(void);
+void gravityl(void);
+void gravityr(void);
+
+void checkcollisionc(int32_t xc, int32_t yc);
+void checkcollisionwall(void);
+void moveball(void);
+void ballvelocity(void);
+void checkcharactercollision(void);
+
+void DrawSprite(int32_t xlo, int32_t ylo, int32_t xlonew, int32_t ylonew, const unsigned short *image, uint32_t width, uint32_t length);
+void BlacktoBackground(uint32_t xlo, uint32_t ylo, const unsigned short *image, uint32_t width, uint32_t length);
+
+void Countdown(void);
+void InitPositions(void);
+void PrintEngGoal(void);
+void PrintSpnGoal(void);
+void PrintOneWonEng(void);
+void PrintTwoWonEng(void);
+void PrintTieEng(void);
+void PrintOneWonSpn(void);
+void PrintTwoWonSpn(void);
+void PrintTieSpn(void);
+void PrintTitle(void);
+void ClickButtonEng(void);
+void ClickButtonSpn(void);
+
+#endif /* FUNCTIONS_H_ */</code></pre>
+
+    <h2>Functions.c <span class="file-note">&mdash; physics, collision, sprite drawing, and menu/UI text rendering</span></h2>
+    <pre><code>/*
+ * Functions.c
+ *
+ *  Created on: Apr 21, 2024
+ *      Author: ryank
+ */
+
+#include &lt;ti/devices/msp/msp.h&gt;
+#include "../inc/LaunchPad.h"
+#include "Arrays.h"
+#include "Functions.h"
+#include "../inc/Clock.h"
+#include "../inc/ST7735.h"
+
+#define floorcollision 4;
+#define wallcollision 3;
+#define charactercollisionright 2;
+#define charactercollisionleft 1;
+#define goalcollision 5;
+#define charactercollisiontop 6;
+#define charactercollisionbottom 7;
+
+int32_t LateralVelocity(int32_t n){
+    int32_t velo = (3*(n-2048))/2048;
+    return velo;
+}
+
+void MoveLeft(void){
+    yl = yl+vyl; // integration
+    xl = xl+vxl; // integration
+    if(yl &lt;= 30){
+        yl = 30;
+    }
+    if(yl&gt;=150){
+        yl = 150;
+    }
+}
+
+void MoveRight(void){
+    yr = yr+vyr; // integration
+    xr = xr+vxr; // integration
+    if(yr &lt;= 30){
+        yr = 30;
+    }
+    if(yr &gt;= 150){
+        yr = 150;
+    }
+}
+
+void checkcharactercollision(void){
+    if ((yr- 20)&lt;= yl | yl &gt;= (yr - 20)){
+        vyl = 0;
+        vyr = 0;
+        yr = yr + 5;
+        yl = yl - 5;
+    }
+}
+
+void JumpLeft(void){
+    if (leftb == 1){
+        jumpflagl = 1;
+        vxl = 5;
+    }
+}
+
+void JumpRight(void){
+    if (rightb == 1){
+        jumpflagr = 1;
+        vxr = 5;
+    }
+}
+
+void gravityl(void){
+    if (jumpflagl == 1){
+        vxl = vxl - 1;
+        leftb = 0;
+        if (xl &lt;= 10){
+            vxl = 0;
+            xl = 10;
+            jumpflagl = 0;
+        }
+    }
+}
+
+void gravityr(void){
+    if (jumpflagr == 1){
+        vxr = vxr - 1;
+        rightb = 0;
+        if (xr &lt;= 10){
+            vxr = 0;
+            xr = 10;
+            jumpflagr = 0;
+        }
+    }
+}
+
+
+
+
+
+
+
+
+
+void checkcollisionc(int32_t xc, int32_t yc){
+
+
+
+    if(xBall &lt;= xc +10){
+        if(xBall &gt;= xc ){
+            if(yBall &lt;= yc){
+                if(yBall &gt;= yc-22){
+                    collisionflag = charactercollisionbottom;
+                }
+            }
+        }
+
+    }
+    if(xBall &lt;= xc + 40){
+        if(xBall &gt;= xc){
+            if(yBall &gt;= yc-22){
+                if(yBall &lt;= yc-11){
+                    collisionflag = charactercollisionleft;
+                }
+            }
+        }
+
+    }
+    if(xBall &lt;= xc + 40){
+        if(xBall &gt;= xc){
+            if(yBall &lt;= yc){
+                if(yBall &gt;= yc-10){
+                    collisionflag = charactercollisionright;
+                }
+            }
+        }
+
+    }
+    if(xBall &lt;= xc + 40){
+        if(xBall &gt;= xc +32){
+            if(yBall &lt;= yc){
+                if(yBall &gt;= yc-22){
+                    collisionflag = charactercollisiontop;
+                }
+            }
+        }
+
+    }
+
+}
+
+void checkcollisionwall(void){
+    if(xBall &lt;= 15){
+        collisionflag = floorcollision;
+    }
+    if(xBall &gt;= 128){
+        collisionflag = wallcollision;
+    }
+    if(yBall &gt;= 160){
+        collisionflag = wallcollision;
+    }
+    if(yBall &lt;= 0){
+        collisionflag = wallcollision;
+    }
+}
+void moveball(void){
+    if (ballvy &gt;=3){
+        ballvy = 3;
+    }
+    if (ballvx &gt;= 9){
+        ballvx = 9;
+    }
+    if (ballvy &lt;= -3){
+        ballvy = -3;
+    }
+    if (ballvx &lt;= -9){
+        ballvx = -9;
+    }
+    yBall = yBall+ballvy; // integration
+    xBall = xBall+ballvx; // integration
+}
+void ballvelocity(void){
+    if(collisionflag == 3){//wall collision
+        ballvx = -1*ballvx;
+        ballvy = -1*ballvy;
+    }
+    if (collisionflag == 4){//floor collision
+        ballvx = -1*ballvx +(2 + (1/2));
+        ballvy = ballvy;
+    }
+    if (collisionflag == 1){//character left collision
+        ballvx = -1*ballvx;
+        ballvy = -1*ballvy;
+        if(charactercollisionflag == 2){
+            yBall = yr-22;
+            if (jumpflagl == 1){
+            ballvy = ballvy - 4;
+            ballvx = ballvx + 3;
+        }
+        else{
+            ballvy = ballvy -2;
+            ballvx = ballvx +1;
+        }
+       }
+        if(charactercollisionflag == 1){
+                    yBall = yl-22;
+                    if (jumpflagr == 1){
+                    ballvy = ballvy - 4;
+                    ballvx = ballvx +3;
+                }
+                else{
+                    ballvy = ballvy -2;
+                    ballvx = ballvx +1;
+                }
+                }
+    }
+    if (collisionflag == 2){//character right collision
+        ballvx = -1*ballvx;
+        ballvy = -1*ballvy;
+        if(charactercollisionflag == 1){
+            yBall = yl;
+            if (jumpflagl == 1){
+            ballvy = ballvy + 4;
+            ballvx = ballvx +3;
+        }
+            else{
+            ballvy = ballvy +2;
+            ballvx = ballvx +1;
+        }
+      }
+        if(charactercollisionflag == 2){
+                    yBall = yr;
+                    if (jumpflagr == 1){
+                    ballvy = ballvy + 4;
+                    ballvx = ballvx +3;
+                }
+                    else{
+                    ballvy = ballvy +2;
+                    ballvx = ballvx +1;
+                }
+              }
+    }
+    if (collisionflag == 6){//character top collision
+        ballvx = ballvx + 1;
+        ballvy = -1*ballvy;
+        if (charactercollisionflag == 1){
+            if(yBall &gt; (yl-11)){
+                ballvy=(ballvy+3);
+                xBall = xl +41;
+            }else{
+                ballvy=(ballvy-3);
+                xBall = xl +41;
+            }
+
+            if (jumpflagl == 1){
+            ballvy = ballvy + 4;
+            ballvx = ballvx + 2;
+        }
+        else{
+            ballvy = ballvy +2;
+
+        }
+       }
+        if (charactercollisionflag ==2){
+            if(yBall &gt; (yr-11)){
+                ballvy=(ballvy+3);
+                xBall = xr +41;
+            }else{
+                ballvy=(ballvy-3);
+                xBall = xr +41;
+            }
+
+            if (jumpflagr == 1){
+                ballvy = ballvy + 4;
+            }
+            else{
+                ballvy = ballvy +2;
+            }
+
+        }
+    }
+    if (collisionflag == 7){//character bottom collision
+            ballvx = 0;
+            ballvy = -1*ballvy;
+            if(charactercollisionflag == 1){
+                yBall = yl;
+                xBall = xl;
+                if (jumpflagl == 1){
+                ballvy = ballvy + 4;
+            }
+            else{
+                ballvy = ballvy +2;
+            }
+           }
+            if(charactercollisionflag == 2){
+                            yBall = yr - 22;
+                            xBall = xr;
+                            if (jumpflagr == 1){
+                            ballvy = ballvy + 4;
+                        }
+                        else{
+                            ballvy = ballvy +2;
+                        }
+                       }
+        }
+
+    ballvx = ballvx - 1;
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+void DrawSprite(int32_t xlo, int32_t ylo, int32_t xlonew, int32_t ylonew, const unsigned short *image, uint32_t width, uint32_t length){
+    unsigned short tempbufl[width*length];
+    uint32_t buflpos=0;
+        for(int32_t j=(length-1); j &gt;= 0; j--){
+            for(uint32_t i=0; i&lt;width; i++){
+                if(ylo%2==0){
+                    tempbufl[buflpos]=Background[((160-(ylo-22)+1-j)*128)+xlo+i];
+                }else{
+                    tempbufl[buflpos]=Background[((160-(ylo-22)-j)*128)+xlo+i];
+                }
+                buflpos++;
+            }
+        }
+
+        ST7735_DrawBitmap(xlo,ylo,tempbufl,width,length);
+
+        buflpos=0;
+                for(int32_t j=(length-1); j &gt;= 0; j--){
+                    for(uint32_t i=0; i&lt;width; i++){
+                        if(ylonew%2==0){
+                            tempbufl[buflpos]=Background[((160-(ylonew-22)+1-j)*128)+xlonew+i];
+                        }else{
+                            tempbufl[buflpos]=Background[((160-(ylonew-22)-j)*128)+xlonew+i];
+                        }
+                        buflpos++;
+                    }
+                }
+
+        for(uint32_t i=0; i&lt;(width*length); i++){
+                if(image[i] != 0x0000){
+                    tempbufl[i]=image[i];
+                }
+            }
+
+        ST7735_DrawBitmap(xlonew,ylonew,tempbufl,width,length);
+}
+
+void BlacktoBackground(uint32_t xlo, uint32_t ylo, const unsigned short *image, uint32_t width, uint32_t length){
+    unsigned short goaltempbuf[(width*length)];
+    uint32_t goalbufpos=0;
+            for(int32_t j=(length-1); j &gt;= 0; j--){
+                for(uint32_t i=0; i&lt;(width); i++){
+                    if(ylo%2==0){
+                        goaltempbuf[goalbufpos]=Background[((160-(ylo-22)+1-j)*128)+xlo+i];
+                    }else{
+                        goaltempbuf[goalbufpos]=Background[((160-(ylo-22)-j)*128)+xlo+i];
+                    }
+                    goalbufpos++;
+                }
+            }
+
+    for(uint32_t i=0; i&lt;(width*length); i++){
+        if(image[i] &gt; 0x0000){
+            goaltempbuf[i]=image[i];
+        }
+    }
+
+    ST7735_DrawBitmap(xlo,ylo,goaltempbuf,width,length);
+}
+
+void Countdown(void){
+    BlacktoBackground(46, 92, Letter3, 36, 24);
+    Clock_Delay1ms(1000);
+    BlacktoBackground(46, 92, Letter2, 36, 24);
+    Clock_Delay1ms(1000);
+    BlacktoBackground(46, 92, Letter1, 36, 24);
+    Clock_Delay1ms(1000);
+}
+
+void InitPositions(void){
+    xr = 10;
+    yr = 130;
+    xl = 10;
+    yl = 50;
+    xBall=10;
+    yBall=85;
+    ballvy=0;
+    ballvx=0;
+}
+
+void PrintEngGoal(void){
+    BlacktoBackground(46, 44, LetterG, 36, 24);
+    Clock_Delay1ms(800);
+    BlacktoBackground(46, 68, LetterO, 36, 24);
+    Clock_Delay1ms(800);
+    BlacktoBackground(46, 92, LetterA, 36, 24);
+    Clock_Delay1ms(800);
+    BlacktoBackground(46, 116, LetterL, 36, 24);
+    Clock_Delay1ms(800);
+    BlacktoBackground(46, 140, LetterExc, 36, 24);
+    Clock_Delay1ms(3000);
+}
+
+void PrintSpnGoal(){
+    BlacktoBackground(46, 56, LetterG, 36, 24);
+    Clock_Delay1ms(800);
+    BlacktoBackground(46, 80, LetterO, 36, 24);
+    Clock_Delay1ms(800);
+    BlacktoBackground(46, 104, LetterL, 36, 24);
+    Clock_Delay1ms(800);
+    BlacktoBackground(46, 128, LetterExc, 36, 24);
+    Clock_Delay1ms(3000);
+}
+
+void PrintOneWonEng(void){
+    BlacktoBackground(64, 44, LetterM, 36, 24);
+    Clock_Delay1ms(800);
+    BlacktoBackground(64, 68, LetterE, 36, 24);
+    Clock_Delay1ms(800);
+    BlacktoBackground(64, 92, LetterS, 36, 24);
+    Clock_Delay1ms(800);
+    BlacktoBackground(64, 116, LetterS, 36, 24);
+    Clock_Delay1ms(800);
+    BlacktoBackground(64, 140, LetterI, 36, 24);
+    Clock_Delay1ms(800);
+    BlacktoBackground(28, 68, LetterW, 36, 24);
+    Clock_Delay1ms(800);
+    BlacktoBackground(28, 92, LetterO, 36, 24);
+    Clock_Delay1ms(800);
+    BlacktoBackground(28, 116, LetterN, 36, 24);
+    Clock_Delay1ms(5000);
+}
+
+void PrintTwoWonEng(void){
+    BlacktoBackground(64, 56, LetterH, 36, 24);
+    Clock_Delay1ms(800);
+    BlacktoBackground(64, 80, LetterO, 36, 24);
+    Clock_Delay1ms(800);
+    BlacktoBackground(64, 104, LetterL, 36, 24);
+    Clock_Delay1ms(800);
+    BlacktoBackground(64, 128, LetterT, 36, 24);
+    Clock_Delay1ms(800);
+    BlacktoBackground(28, 68, LetterW, 36, 24);
+    Clock_Delay1ms(800);
+    BlacktoBackground(28, 92, LetterO, 36, 24);
+    Clock_Delay1ms(800);
+    BlacktoBackground(28, 116, LetterN, 36, 24);
+    Clock_Delay1ms(5000);
+}
+
+void PrintTieEng(void){
+    BlacktoBackground(46, 68, LetterT, 36, 24);
+    Clock_Delay1ms(800);
+    BlacktoBackground(46, 92, LetterI, 36, 24);
+    Clock_Delay1ms(800);
+    BlacktoBackground(46, 116, LetterE, 36, 24);
+    Clock_Delay1ms(5000);
+}
+
+void PrintOneWonSpn(void){
+    BlacktoBackground(64, 44, LetterM, 36, 24);
+    Clock_Delay1ms(800);
+    BlacktoBackground(64, 68, LetterE, 36, 24);
+    Clock_Delay1ms(800);
+    BlacktoBackground(64, 92, LetterS, 36, 24);
+    Clock_Delay1ms(800);
+    BlacktoBackground(64, 116, LetterS, 36, 24);
+    Clock_Delay1ms(800);
+    BlacktoBackground(64, 140, LetterI, 36, 24);
+    Clock_Delay1ms(800);
+    BlacktoBackground(28, 56, LetterG, 36, 24);
+    Clock_Delay1ms(800);
+    BlacktoBackground(28, 80, LetterA, 36, 24);
+    Clock_Delay1ms(800);
+    BlacktoBackground(28, 104, LetterN, 36, 24);
+    Clock_Delay1ms(800);
+    BlacktoBackground(28, 128, LetterOAcc, 36, 24);
+    Clock_Delay1ms(5000);
+}
+
+void PrintTwoWonSpn(void){
+    BlacktoBackground(64, 56, LetterH, 36, 24);
+    Clock_Delay1ms(800);
+    BlacktoBackground(64, 80, LetterO, 36, 24);
+    Clock_Delay1ms(800);
+    BlacktoBackground(64, 104, LetterL, 36, 24);
+    Clock_Delay1ms(800);
+    BlacktoBackground(64, 128, LetterT, 36, 24);
+    Clock_Delay1ms(800);
+    BlacktoBackground(28, 56, LetterG, 36, 24);
+    Clock_Delay1ms(800);
+    BlacktoBackground(28, 80, LetterA, 36, 24);
+    Clock_Delay1ms(800);
+    BlacktoBackground(28, 104, LetterN, 36, 24);
+    Clock_Delay1ms(800);
+    BlacktoBackground(28, 128, LetterOAcc, 36, 24);
+    Clock_Delay1ms(5000);
+}
+
+void PrintTieSpn(void){
+    BlacktoBackground(46, 32, LetterE, 36, 24);
+    Clock_Delay1ms(800);
+    BlacktoBackground(46, 56, LetterM, 36, 24);
+    Clock_Delay1ms(800);
+    BlacktoBackground(46, 80, LetterP, 36, 24);
+    Clock_Delay1ms(800);
+    BlacktoBackground(46, 104, LetterA, 36, 24);
+    Clock_Delay1ms(800);
+    BlacktoBackground(46, 128, LetterT, 36, 24);
+    Clock_Delay1ms(800);
+    BlacktoBackground(46, 152, LetterE, 36, 24);
+    Clock_Delay1ms(5000);
+}
+
+void PrintTitle(void){
+    BlacktoBackground(87, 56, LetterH, 36, 24);
+    BlacktoBackground(87, 80, LetterE, 36, 24);
+    BlacktoBackground(87, 104, LetterA, 36, 24);
+    BlacktoBackground(87, 128, LetterD, 36, 24);
+    BlacktoBackground(51, 32, LetterS, 36, 24);
+    BlacktoBackground(51, 56, LetterO, 36, 24);
+    BlacktoBackground(51, 80, LetterC, 36, 24);
+    BlacktoBackground(51, 104, LetterC, 36, 24);
+    BlacktoBackground(51, 128, LetterE, 36, 24);
+    BlacktoBackground(51, 152, LetterR, 36, 24);
+}
+
+void ClickButtonEng(void){
+    ST7735_DrawBitmap(20,59,SmallLetterCcap,10,9);
+    ST7735_DrawBitmap(20,63,SmallLetterL,10,4);
+    ST7735_DrawBitmap(20,67,SmallLetterI,10,4);
+    ST7735_DrawBitmap(20,73,SmallLetterC,10,6);
+    ST7735_DrawBitmap(20,80,SmallLetterK,10,7);
+    ST7735_DrawBitmap(20,85,SmallLetterSpace,10,5);
+    ST7735_DrawBitmap(20,95,SmallLetterAcap,10,10);
+    ST7735_DrawBitmap(20,102,SmallLetterN,10,7);
+    ST7735_DrawBitmap(20,109,SmallLetterY,10,7);
+    ST7735_DrawBitmap(10,44,SmallLetterBcap,10,9);
+    ST7735_DrawBitmap(10,51,SmallLetterU,10,7);
+    ST7735_DrawBitmap(10,56,SmallLetterT,10,5);
+    ST7735_DrawBitmap(10,61,SmallLetterT,10,5);
+    ST7735_DrawBitmap(10,67,SmallLetterO,10,6);
+    ST7735_DrawBitmap(10,74,SmallLetterN,10,7);
+    ST7735_DrawBitmap(10,79,SmallLetterSpace,10,5);
+    ST7735_DrawBitmap(10,84,SmallLetterT,10,5);
+    ST7735_DrawBitmap(10,90,SmallLetterO,10,6);
+    ST7735_DrawBitmap(10,95,SmallLetterSpace,10,5);
+    ST7735_DrawBitmap(10,102,SmallLetterScap,10,7);
+    ST7735_DrawBitmap(10,107,SmallLetterT,10,5);
+    ST7735_DrawBitmap(10,114,SmallLetterA,10,7);
+    ST7735_DrawBitmap(10,120,SmallLetterR,10,6);
+    ST7735_DrawBitmap(10,125,SmallLetterT,10,5);
+}
+
+void ClickButtonSpn(void){
+    ST7735_DrawBitmap(30,43,SmallLetterEcap,10,9);
+    ST7735_DrawBitmap(30,47,SmallLetterL,10,4);
+    ST7735_DrawBitmap(30,51,SmallLetterI,10,4);
+    ST7735_DrawBitmap(30,58,SmallLetterG,10,7);
+    ST7735_DrawBitmap(30,64,SmallLetterE,10,6);
+    ST7735_DrawBitmap(30,69,SmallLetterSpace,10,5);
+    ST7735_DrawBitmap(30,78,SmallLetterCcap,10,9);
+    ST7735_DrawBitmap(30,85,SmallLetterU,10,7);
+    ST7735_DrawBitmap(30,92,SmallLetterA,10,7);
+    ST7735_DrawBitmap(30,96,SmallLetterL,10,4);
+    ST7735_DrawBitmap(30,103,SmallLetterQ,10,7);
+    ST7735_DrawBitmap(30,110,SmallLetterU,10,7);
+    ST7735_DrawBitmap(30,114,SmallLetterI,10,4);
+    ST7735_DrawBitmap(30,120,SmallLetterE,10,6);
+    ST7735_DrawBitmap(30,126,SmallLetterR,10,6);
+    ST7735_DrawBitmap(20,56,SmallLetterBcap,10,9);
+    ST7735_DrawBitmap(20,62,SmallLetterO,10,6);
+    ST7735_DrawBitmap(20,67,SmallLetterT,10,5);
+    ST7735_DrawBitmap(20,73,SmallLetterOAcc,10,6);
+    ST7735_DrawBitmap(20,80,SmallLetterN,10,7);
+    ST7735_DrawBitmap(20,85,SmallLetterSpace,10,5);
+    ST7735_DrawBitmap(20,92,SmallLetterP,10,7);
+    ST7735_DrawBitmap(20,99,SmallLetterA,10,7);
+    ST7735_DrawBitmap(20,105,SmallLetterR,10,6);
+    ST7735_DrawBitmap(20,112,SmallLetterA,10,7);
+    ST7735_DrawBitmap(10,60,SmallLetterCcap,10,9);
+    ST7735_DrawBitmap(10,66,SmallLetterO,10,6);
+    ST7735_DrawBitmap(10,77,SmallLetterM,10,11);
+    ST7735_DrawBitmap(10,83,SmallLetterE,10,6);
+    ST7735_DrawBitmap(10,90,SmallLetterN,10,7);
+    ST7735_DrawBitmap(10,96,SmallLetterZ,10,6);
+    ST7735_DrawBitmap(10,103,SmallLetterA,10,7);
+    ST7735_DrawBitmap(10,109,SmallLetterR,10,6);
+}</code></pre>
+
+    <h2>Switch.h <span class="file-note">&mdash; button input declarations</span></h2>
+    <pre><code>/*
+ * Switch.h
+ *
+ *  Created on: Nov 5, 2023
+ *      Author: jonat
+ */
+
+#ifndef SWITCH_H_
+#define SWITCH_H_
+
+extern uint32_t temp;
+extern int32_t rightb;
+extern int32_t leftb;
+
+// initialize your switches
+void Switch_Init(void);
+
+// return current state of switches
+uint32_t Switch_In(void);
+
+
+#endif /* SWITCH_H_ */</code></pre>
+
+    <h2>Switch.c <span class="file-note">&mdash; button input</span></h2>
+    <pre><code>/*
+ * Switch.c
+ *
+ *  Created on: Nov 5, 2023
+ *      Author:
+ */
+#include &lt;ti/devices/msp/msp.h&gt;
+#include "../inc/LaunchPad.h"
+#include "Arrays.h"
+#include "Functions.h"
+#include "../inc/Clock.h"
+#include "../inc/ST7735.h"
+// LaunchPad.h defines all the indices into the PINCM table
+void Switch_Init(void){
+    // write this
+    IOMUX-&gt;SECCFG.PINCM[PB16INDEX]=0x00040081;
+    IOMUX-&gt;SECCFG.PINCM[PB17INDEX]=0x00040081;
+  
+}
+// return current state of switches
+void Switch_In(void){
+    // write this
+    temp = GPIOB-&gt;DIN31_0;
+    temp &amp;= 0x00030000;
+    rightb = temp &gt;&gt; 16;
+    leftb = temp &gt;&gt; 17;
+}</code></pre>
+
+    <h2>Sound.h <span class="file-note">&mdash; DAC sound playback declarations</span></h2>
+    <pre><code>// Sound.h
+// Runs on MSPM0
+// Play sounds on 5-bit DAC.
+// Your name
+// 11/5/2023
+#ifndef SOUND_H
+#define SOUND_H
+#include &lt;stdint.h&gt;
+
+// initialize a 11kHz SysTick, however no sound should be started
+// initialize any global variables
+// Initialize the 5 bit DAC
+// This is called once
+void Sound_Init(void);
+
+//******* Sound_Start ************
+// This function does not output to the DAC. 
+// Rather, it sets a pointer and counter, and then enables the SysTick interrupt.
+// It starts the sound, and the SysTick ISR does the output
+// feel free to change the parameters
+// Sound should play once and stop
+// Input: pt is a pointer to an array of DAC outputs
+//        count is the length of the array
+// Output: none
+// special cases: as you wish to implement
+void Sound_Start(const uint8_t *pt, uint32_t count);
+
+// following 8 functions do not output to the DAC
+// they configure pointers/counters and initiate the sound by calling Sound_Start
+void Sound_Shoot(void);
+void Sound_Killed(void);
+void Sound_Explosion(void);
+void Sound_Fastinvader1(void);
+void Sound_Fastinvader2(void);
+void Sound_Fastinvader3(void);
+void Sound_Fastinvader4(void);
+void Sound_Highpitch(void);
+
+#endif</code></pre>
+
+    <h2>Sound.c <span class="file-note">&mdash; DAC sound playback</span></h2>
+    <pre><code>// Sound.c
+// Runs on MSPM0
+// Sound assets in sounds/sounds.h
+// Jonathan Valvano
+// 11/15/2021 
+#include &lt;stdint.h&gt;
+#include &lt;ti/devices/msp/msp.h&gt;
+#include "Sound.h"
+#include "sounds/sounds.h"
+#include "../inc/DAC5.h"
+#include "../inc/Timer.h"
+#include "Arrays.h"
+
+const uint8_t *CurrSound;
+static uint32_t SoundPosition=0, SoundFlag=0, TotLength;
+
+void SysTick_IntArm(uint32_t period, uint32_t priority){
+  // write
+    SysTick-&gt;CTRL=0x00;
+    SysTick-&gt;LOAD=period-1;
+    SCB-&gt;SHP[1]=(SCB-&gt;SHP[1]&amp;(~0xC0000000))|priority&lt;&lt;30;
+    SysTick-&gt;VAL=0;
+    SysTick-&gt;CTRL=0x07;
+}
+// initialize a 11kHz SysTick, however no sound should be started
+// initialize any global variables
+// Initialize the 5 bit DAC
+
+void Sound_Init(void){
+// write this
+  DAC5_Init();
+  SysTick_IntArm(7256,0);
+}
+
+void SysTick_Handler(void){ // called at 11 kHz
+  // output one value to DAC if a sound is active
+    if(SoundFlag==1){
+        DAC5_Out(CurrSound[SoundPosition]);
+        SoundPosition++;
+        if(SoundPosition == TotLength){
+            DAC5_Out(0);
+            SoundFlag=0;
+        }
+    }
+}
+
+//******* Sound_Start ************
+// This function does not output to the DAC. 
+// Rather, it sets a pointer and counter, and then enables the SysTick interrupt.
+// It starts the sound, and the SysTick ISR does the output
+// feel free to change the parameters
+// Sound should play once and stop
+// Input: pt is a pointer to an array of DAC outputs
+//        count is the length of the array
+// Output: none
+// special cases: as you wish to implement
+
+void Sound_Start(const uint8_t *pt, uint32_t count){
+// write this
+  CurrSound = pt;
+  SoundPosition = 0;
+  TotLength = count;
+  SoundFlag=1;
+  
+  // In main, define KickCount=2304 and GoalCount=34048
+}
+
+void Sound_Kick(void){
+// write this
+  
+}
+void Sound_Goal(void){
+// write this
+  
+}
+void Sound_Explosion(void){
+// write this
+ 
+}
+
+void Sound_Fastinvader1(void){
+  
+}
+void Sound_Fastinvader2(void){
+  
+}
+void Sound_Fastinvader3(void){
+  
+}
+void Sound_Fastinvader4(void){
+  
+}
+void Sound_Highpitch(void){
+  
+}</code></pre>
+
+    <h2>Arrays.h <span class="file-note">&mdash; declarations for sprite/background bitmaps and audio sample arrays (data itself omitted — just pixel/sample tables)</span></h2>
+    <pre><code>/*
+ * Arrays.h
+ *
+ *  Created on: Apr 17, 2024
+ *      Author: ryank
+ */
+
+#ifndef ARRAYS_H_
+#define ARRAYS_H_
+
+
+extern const unsigned char Kick[];
+extern const unsigned char Goal[];
+
+extern const unsigned short Holt[];
+extern const unsigned short Messi[];
+extern const unsigned short Ball[];
+
+extern const unsigned short Background[];
+
+extern const unsigned short LetterG[];
+extern const unsigned short LetterO[];
+extern const unsigned short LetterA[];
+extern const unsigned short LetterL[];
+extern const unsigned short LetterExc[];
+extern const unsigned short Letter1[];
+extern const unsigned short Letter2[];
+extern const unsigned short Letter3[];
+extern const unsigned short LetterE[];
+extern const unsigned short LetterF[];
+extern const unsigned short LetterH[];
+extern const unsigned short LetterI[];
+extern const unsigned short LetterN[];
+extern const unsigned short LetterR[];
+extern const unsigned short LetterT[];
+extern const unsigned short LetterW[];
+extern const unsigned short LetterM[];
+extern const unsigned short LetterP[];
+extern const unsigned short LetterOAcc[];
+extern const unsigned short LetterD[];
+extern const unsigned short LetterS[];
+extern const unsigned short LetterC[];
+
+extern const unsigned short SmallLetterSpace[];
+extern const unsigned short SmallLetterA[];
+extern const unsigned short SmallLetterAcap[];
+extern const unsigned short SmallLetterBcap[];
+extern const unsigned short SmallLetterC[];
+extern const unsigned short SmallLetterCcap[];
+extern const unsigned short SmallLetterE[];
+extern const unsigned short SmallLetterEcap[];
+extern const unsigned short SmallLetterG[];
+extern const unsigned short SmallLetterI[];
+extern const unsigned short SmallLetterK[];
+extern const unsigned short SmallLetterL[];
+extern const unsigned short SmallLetterM[];
+extern const unsigned short SmallLetterN[];
+extern const unsigned short SmallLetterO[];
+extern const unsigned short SmallLetterOAcc[];
+extern const unsigned short SmallLetterP[];
+extern const unsigned short SmallLetterQ[];
+extern const unsigned short SmallLetterR[];
+extern const unsigned short SmallLetterScap[];
+extern const unsigned short SmallLetterT[];
+extern const unsigned short SmallLetterU[];
+extern const unsigned short SmallLetterY[];
+extern const unsigned short SmallLetterZ[];
+
+#endif /* ARRAYS_H_ */</code></pre>
+
+
+  </div>
+
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    &copy; 2026 Adrian Corrales
+  </div>
+</footer>
+
+</body>
+</html>

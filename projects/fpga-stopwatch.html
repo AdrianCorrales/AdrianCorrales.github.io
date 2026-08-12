@@ -20,34 +20,83 @@
 
   <div class="project-header">
     <h1>FPGA-Based Programmable Stopwatch/Timer</h1>
-    <div class="meta">Verilog, Basys3 FPGA · April 2026</div>
-  </div>
-
-  <div class="media-placeholder">
-    [ Demo GIF/video of the stopwatch running on the 7-segment display ]
+    <div class="meta">Verilog, Basys3 (Artix-7) · April 2026</div>
   </div>
 
   <div class="project-body">
 
     <h2>Overview</h2>
+    <p>
+      I built a four-mode stopwatch/timer entirely in structural RTL and brought it through synthesis,
+      place, and route to a timing-closed bitstream on a Basys3 board. The design counts seconds and
+      centiseconds up or down, and can either start from zero/roll over from 99.99, or start from a
+      value dialed in on the board's switches &mdash; so it doubles as both a stopwatch and a
+      countdown timer without changing hardware.
+    </p>
     <ul>
-      <li>Designed and implemented a multi-mode programmable stopwatch/timer using RTL methodology on a Basys3 FPGA</li>
-      <li>Programmed the system in Verilog, supporting up/down counting and externally loaded values</li>
-      <li>Integrated user I/O (buttons, switches, 7-segment display) for real-time interaction</li>
+      <li>Six-module RTL design: clock divider, debounced button-pulse generator, a Moore FSM controller, a BCD up/down time counter, a 4-digit multiplexed display driver, and a 7-segment decoder</li>
+      <li>Mode select and settable start value driven live off the board's 10 slide switches, decoded combinationally by the controller</li>
+      <li>Verified in Vivado through synthesis and full implementation (place &amp; route) on the Basys3 board, with all timing constraints met</li>
     </ul>
 
-    <div class="todo-note">
-      TODO: replace with real content — a demo video/GIF (this project is inherently visual), a block diagram
-      of the RTL modules, and a snippet of Verilog you're proud of.
-    </div>
-
     <h2>Architecture</h2>
-    <div class="media-placeholder">
-      [ Block diagram of RTL modules ]
-    </div>
+    <p>
+      <code>main_stopwatch</code> is the top level; everything else is a leaf module it wires together:
+    </p>
+    <ul>
+      <li><strong>clockdiv</strong> &mdash; divides the 100&nbsp;MHz board clock down to a 10&nbsp;ms tick (counts to 999,999) that paces the time counter</li>
+      <li><strong>button_pul</strong> &mdash; edge-detects the raw start/reset button inputs into single-cycle pulses, instantiated once per button, so a held button doesn't repeat-trigger the FSM</li>
+      <li><strong>cont</strong> &mdash; the controller: a 3-state Moore FSM (<code>done</code> &rarr; <code>continue</code> &rarr; <code>stop</code>) that decodes the 2-bit mode switch into a count direction and load value, and gates the counter's enable/load lines off the start/reset pulses and the counter's own start/max flags</li>
+      <li><strong>time_counter</strong> &mdash; the BCD counter itself: two seconds digits and two centisecond digits, counting up or down on each 10&nbsp;ms tick, with synchronous load from the controller's decoded start value</li>
+      <li><strong>main_stopwatch</strong> (display mux) &mdash; a free-running 16-bit refresh counter selects which of the 4 digits is active, driving the anode lines and routing that digit's BCD value to the decoder fast enough that all 4 digits appear lit simultaneously</li>
+      <li><strong>val_to_7seg</strong> &mdash; combinational BCD-to-seven-segment decoder</li>
+    </ul>
+    <p>
+      The four modes are selected on <code>sw[9:8]</code>: count up from zero, count down from 99.99,
+      count up from a switch-set value, and count down from a switch-set value &mdash; with the start
+      value itself dialed in on <code>sw[7:4]</code> (seconds tens) and <code>sw[3:0]</code> (seconds ones).
+    </p>
 
-    <h2>Code Snippet</h2>
-    <pre><code>// TODO: paste a representative Verilog snippet here</code></pre>
+    <h2>Controller FSM</h2>
+    <p>
+      This is the piece that ties the rest of the design together &mdash; it decodes the mode switches
+      into a load value and count direction, then arbitrates start/stop transitions off the debounced
+      button pulses and the counter's own boundary flags (<code>start</code> when it hits zero,
+      <code>max</code> when it hits 99.99):
+    </p>
+    <pre><code>// next-state logic
+always @(*) begin
+    next_state = state;
+
+    case(state)
+        done: begin
+            if (start_pulse)
+                next_state = continue;
+        end
+
+        continue: begin
+            if (reset_pulse)
+                next_state = done;
+            else if (start_pulse)
+                next_state = stop;
+            else if ((c_up == 1'b0 &amp;&amp; start) || (c_up == 1'b1 &amp;&amp; max))
+                next_state = stop;
+        end
+
+        stop: begin
+            if (reset_pulse)
+                next_state = done;
+            else if (start_pulse)
+                next_state = continue;
+        end
+    endcase
+end</code></pre>
+    <p>
+      Full source for all six modules and the pin constraints file is in
+      <a href="fpga-stopwatch-src/">fpga-stopwatch-src/</a>. The design was carried through synthesis
+      and full place &amp; route in Vivado, with all timing constraints met at the board's 100&nbsp;MHz
+      clock and zero failing paths.
+    </p>
 
   </div>
 

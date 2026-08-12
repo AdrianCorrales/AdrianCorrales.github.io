@@ -20,37 +20,120 @@
 
   <div class="project-header">
     <h1>Two-Stage MOSFET LED Driver</h1>
-    <div class="meta">Analog Circuit Design · 2N7000 MOSFETs · Nov. 2025</div>
-  </div>
-
-  <div class="media-placeholder">
-    [ Photo of breadboard / bench setup goes here ]
+    <div class="meta">Analog Circuit Design (ECE 438) · 2N7000 MOSFETs · Nov. 2025</div>
   </div>
 
   <div class="project-body">
 
     <h2>Overview</h2>
+    <p>
+      I designed, biased, and built a two-stage MOSFET amplifier to drive an LED: a common-source
+      stage for voltage gain, cascaded into a common-drain (source-follower) stage for current drive,
+      so the load doesn't drag the amplifier's operating point around. I built and measured the design
+      twice &mdash; once for a red LED, once for a green one &mdash; to see how the ~0.4&nbsp;V difference in
+      forward voltage between the two colors propagates through the whole bias chain.
+    </p>
     <ul>
-      <li>Designed and built a two-stage amplifier (common-source + source follower) using 2N7000 MOSFETs</li>
-      <li>Calculated DC bias and small-signal gain for a ~1 mA operating point</li>
-      <li>Characterized device threshold voltage and operating regions</li>
-      <li>Measured and validated gain at 1 kHz using an oscilloscope</li>
+      <li>Designed a two-stage amplifier (common-source M1 + common-drain M2) in 2N7000 MOSFETs to drive an LED at ~1&nbsp;mA quiescent current</li>
+      <li>Characterized each MOSFET's threshold voltage and DC transfer curve before biasing, since device-to-device variation shifts the whole design</li>
+      <li>Calculated gate bias, drain resistor, and voltage-divider network for both a 100&nbsp;&Omega; and 500&nbsp;&Omega; source resistor, then built and measured the 100&nbsp;&Omega; version for each LED color</li>
+      <li>Measured DC operating points (V<sub>GS</sub>, V<sub>DS</sub>, V<sub>S</sub>) and verified they landed within 20% of the design targets</li>
+      <li>Drove the input with a 1&nbsp;kHz, ~0.3&nbsp;V<sub>pp</sub> sine wave and measured stage-1 gain and full-circuit gain on a Tektronix DPO 2012, comparing against the hand-calculated small-signal gain</li>
     </ul>
 
-    <div class="todo-note">
-      TODO: replace with real content — schematic, calculated vs. measured gain numbers, and scope screenshots.
-    </div>
+    <h2>Circuit</h2>
+    <p>
+      Stage 1 is a common-source amplifier: M1 with a voltage-divider gate bias (R<sub>1</sub>/R<sub>2</sub>),
+      a drain resistor R<sub>D</sub> setting the ~1&nbsp;mA bias current, and an input coupling capacitor
+      sized for the 1&nbsp;kHz signal band. Its output feeds directly into the gate of M2, which forms
+      stage 2: a common-drain / source-follower with the LED and its series resistor R<sub>S</sub> in the
+      source leg. The gate bias of M2 is set by the DC output of stage 1, so the two stages aren't
+      independent &mdash; getting the LED's operating point right meant working backward from the
+      LED's forward voltage, through M2's source-follower drop, to the exact DC level stage 1 needed
+      to output.
+    </p>
+    <p>
+      Both MOSFETs measured a threshold voltage of about 1.5&nbsp;V. The red LED turned on around
+      1.7&nbsp;V and reached comfortable brightness around 2.4&ndash;2.9&nbsp;V (depending on R<sub>S</sub>);
+      the green LED needed roughly 0.2&nbsp;V more at every step, which is exactly what you'd expect
+      from its wider bandgap. That shift is what forced the two designs (Task 2 vs. Task 3) to use
+      different bias points even though the topology was identical.
+    </p>
 
-    <h2>Schematic</h2>
-    <div class="media-placeholder">
-      [ Circuit schematic image ]
-    </div>
+    <table class="data-table">
+      <thead><tr><th>Design target</th><th>Red LED</th><th>Green LED</th></tr></thead>
+      <tbody>
+        <tr><td>V<sub>G2</sub> (M2 gate bias, R<sub>S</sub> = 100&nbsp;&Omega;)</td><td>3.7 V</td><td>3.85 V</td></tr>
+        <tr><td>R<sub>D</sub> (stage 1 drain resistor, R<sub>S</sub> = 100&nbsp;&Omega;)</td><td>1.3 k&Omega;</td><td>1.2 k&Omega;</td></tr>
+        <tr><td>V<sub>G1</sub> (M1 gate bias)</td><td>1.39 V</td><td>1.38 V</td></tr>
+        <tr><td>Voltage divider (R<sub>1</sub> / R<sub>2</sub>)</td><td>26 k&Omega; / 10 k&Omega;</td><td>26 k&Omega; / 10 k&Omega;</td></tr>
+        <tr><td>Coupling capacitor</td><td colspan="2">0.02 &micro;F (from 1/(2&pi;&middot;1000&middot;R<sub>in</sub>) at 1 kHz)</td></tr>
+      </tbody>
+    </table>
 
     <h2>Results</h2>
-    <div class="media-placeholder">
-      [ Oscilloscope screenshot: 1 kHz gain measurement ]
+
+    <h3>DC operating point</h3>
+    <p>
+      With R<sub>S</sub> = 100&nbsp;&Omega;, the built circuit landed within a few percent of every design
+      target &mdash; V<sub>GS1</sub> measured 1.39&nbsp;V on both LED builds (matching the design exactly),
+      and V<sub>DS1</sub>/V<sub>S2</sub> tracked within the 20% tolerance the lab asked for. That gave me
+      confidence the small-signal measurements that followed were happening around the intended
+      operating point, not some drifted-off region of the MOSFET's I-V curve.
+    </p>
+
+    <h3>Small-signal gain — Red LED</h3>
+    <div class="two-col-media">
+      <figure>
+        <img class="media-full" src="../assets/img/mosfet-led-driver/stage1-gain-red.jpeg" alt="Oscilloscope trace of stage 1 gain measurement for the red LED circuit: yellow trace is the gate input, cyan trace is the M1 drain output, both at 1 kHz">
+        <figcaption>Stage 1 gain — Ch1 (yellow) = gate of M1, Ch2 (cyan) = drain of M1</figcaption>
+      </figure>
+      <figure>
+        <img class="media-full" src="../assets/img/mosfet-led-driver/full-gain-red.jpeg" alt="Oscilloscope trace of full two-stage gain measurement for the red LED circuit at 1 kHz">
+        <figcaption>Full two-stage gain — Ch1 = gate of M1, Ch2 = LED-side output of M2</figcaption>
+      </figure>
     </div>
-    <p>[ Calculated gain: ___ &nbsp;|&nbsp; Measured gain: ___ &nbsp;|&nbsp; % error: ___ ]</p>
+    <p>
+      At 1&nbsp;kHz, stage 1 measured a peak-to-peak gain of about &minus;14.4 (4.16&nbsp;V<sub>pp</sub> out
+      for 288&nbsp;mV<sub>pp</sub> in), close to the &minus;13 hand-calculated from g<sub>m</sub>R<sub>D</sub>.
+      The full two-stage gain measured about 7.5, notably below the ~11.7 predicted by simply
+      multiplying the stage-1 and stage-2 gains. That gap is the source follower's finite output
+      impedance and the LED's own nonlinear I-V loading the node harder than the small-signal model
+      assumes &mdash; the kind of thing that's easy to write down analytically and then watch disagree
+      with the scope.
+    </p>
+
+    <h3>Small-signal gain — Green LED</h3>
+    <div class="two-col-media">
+      <figure>
+        <img class="media-full" src="../assets/img/mosfet-led-driver/stage1-gain-green.jpeg" alt="Oscilloscope trace of stage 1 gain measurement for the green LED circuit: yellow trace is the gate input, cyan trace is the M1 drain output, both at 1 kHz">
+        <figcaption>Stage 1 gain — Ch1 (yellow) = gate of M1, Ch2 (cyan) = drain of M1</figcaption>
+      </figure>
+      <figure>
+        <img class="media-full" src="../assets/img/mosfet-led-driver/full-gain-green.jpeg" alt="Oscilloscope trace of full two-stage gain measurement for the green LED circuit at approximately 1 kHz">
+        <figcaption>Full two-stage gain — Ch1 = gate of M1, Ch2 = LED-side output of M2</figcaption>
+      </figure>
+    </div>
+    <p>
+      Same pattern here: stage 1 gain measured around &minus;12.5 to &minus;13.9 depending on whether
+      you use the peak-to-peak or amplitude readout, bracketing the &minus;12 calculated value. The
+      full-circuit gain again measured lower than the calculated ~11.8, landing around 6.8. The
+      consistency of that gap across both LED colors is what convinced me it's a real loading effect
+      and not measurement noise on one run.
+    </p>
+
+    <h3>Discussion</h3>
+    <p>
+      The red and green LEDs behaved as predicted by their different forward voltages: green needed
+      roughly 0.2&ndash;0.3&nbsp;V more at every stage to reach the same qualitative brightness, which
+      shifted the whole bias chain up without changing the topology. Between the two R<sub>S</sub> values
+      I designed for, 100&nbsp;&Omega; drove more current and a brighter LED but pulled the drain
+      voltage down harder; 500&nbsp;&Omega; limited current and dimmed the LED, but kept the second
+      stage sitting in a more linear region with more headroom for the signal swing. That's the actual
+      design tradeoff in a circuit like this &mdash; brightness vs. how much clean signal swing you can
+      pass through the output stage &mdash; and it's not something you'd see just by looking at the DC
+      bias equations in isolation.
+    </p>
 
   </div>
 

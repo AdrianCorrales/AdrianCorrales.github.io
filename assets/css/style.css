@@ -131,6 +131,14 @@ main {
   font-size: 0.75rem;
   text-align: center;
   padding: 8px;
+  overflow: hidden;
+}
+
+.project-card .thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #fff;
 }
 
 .project-card h3 {
@@ -249,6 +257,18 @@ main {
   margin: 28px 0;
 }
 
+.media-full {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 12px;
+  box-sizing: border-box;
+  margin: 28px 0;
+}
+
 .project-body {
   border-top: 1px solid var(--border);
   padding-top: 8px;
@@ -259,6 +279,21 @@ main {
   font-size: 1.3rem;
   font-weight: 700;
   margin: 40px 0 14px;
+}
+
+.project-body h3 {
+  font-family: var(--serif);
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin: 28px 0 10px;
+}
+
+.reference-note {
+  font-size: 0.85rem;
+  color: var(--muted);
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+  margin-top: 36px;
 }
 
 .project-body ul {

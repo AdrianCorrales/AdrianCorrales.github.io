@@ -23,33 +23,105 @@
     <div class="meta">MuMax3, Python (numpy, matplotlib) · 2026</div>
   </div>
 
-  <div class="media-placeholder">
-    [ Plot: magnetization dynamics / damping vs. field or geometry ]
-  </div>
+  <img class="media-full" src="../assets/img/micromagnetic-simulation/decay-fit.png" alt="Damped magnetization precession over time, with peak-fit envelope used to extract frequency and relaxation time">
 
   <div class="project-body">
 
     <h2>Overview</h2>
+    <p>
+      Spin waves, or magnons, are one of the alternatives researchers are looking at for moving
+      information without the usual flow of charge. That matters because ordinary current-based
+      electronics dissipates energy as heat, and that problem only gets worse as devices shrink and
+      circuit density goes up. A magnon avoids that by carrying information as a collective precession
+      of magnetic moments instead of a stream of electrons. The catch is that this only works if the
+      wave can travel far enough to be useful before it damps out &mdash; so damping isn't just a side
+      detail, it's the thing that decides whether the idea is practical at all. I built this project to
+      dig into that directly: GPU-accelerated micromagnetic simulations that track how effective Gilbert
+      damping (&alpha;<sub>eff</sub>) in a laterally confined ferromagnetic structure changes with external
+      bias field and with device geometry.
+    </p>
     <ul>
-      <li>Performed GPU-accelerated micromagnetic simulations to model magnetization dynamics in confined ferromagnetic structures</li>
-      <li>Investigated dependence of effective Gilbert damping (&alpha;<sub>eff</sub>) on external magnetic field and geometry</li>
-      <li>Extracted physical parameters (frequency, relaxation time, damping) from time-domain magnetization data using Python</li>
-      <li>Analyzed spin-wave mode behavior and non-uniform damping effects across varying device dimensions</li>
+      <li>Built MuMax3 simulations of magnetization dynamics in confined ferromagnetic thin-film structures</li>
+      <li>Extracted &alpha;<sub>eff</sub>, resonance frequency, and relaxation time from the time-domain magnetization data by fitting a damped-harmonic decay in Python</li>
+      <li>Swept external bias field (1&ndash;40 kOe) at fixed geometry, then lateral size (2&ndash;6 &micro;m) at fixed field, to pull apart field-driven damping from geometry-driven damping</li>
+      <li>Checked the results against Song et al. (2016), the published study I was trying to reproduce and build on</li>
     </ul>
 
-    <div class="todo-note">
-      TODO: replace with real content — simulation geometry/parameters, plots of &alpha;<sub>eff</sub> vs. field/geometry,
-      a sentence on why this matters (spintronic device relevance), and a link to the simulation script if shareable.
-    </div>
-
     <h2>Method</h2>
-    <p>[ Simulation setup: geometry, mesh, material parameters, field sweep range ]</p>
+    <p>
+      Each run starts with a laterally confined film initialized to uniform magnetization along x. I
+      then kick it with a short Gaussian field pulse (~39 ps FWHM) along y, which sets off precession.
+      The resulting M<sub>y</sub>(t) response comes out as a damped oscillation, so I fit the peak envelope
+      to an exponential decay to get the relaxation time &tau;, and pull the resonance frequency f out of
+      the oscillation period. &alpha;<sub>eff</sub> then falls out of f and &tau;, and I compare it against
+      the intrinsic damping I set in the simulation (&alpha; = 0.008).
+    </p>
+    <pre><code>Nx := 750
+Ny := 750       // varied with sample size L
+Nz := 1
+dx := 4e-9
+dy := 4e-9
+dz := 10e-9
+HkOe := 1.0     // varied with bias field sweep
+
+SetGridSize(Nx, Ny, Nz)
+SetCellSize(dx, dy, dz)
+Msat  = 8.6e5
+Aex   = 1.3e-11
+alpha = 0.008
+m = uniform(1, 0, 0)
+
+Bbias := HkOe * 0.1
+fwhm  := 39e-12
+sigma := fwhm / 2.35482
+t0    := 100e-12
+Bpulse0 := Bbias / 10.0
+B_ext = vector(Bbias, 0, 0)
+relax()
+
+for t := 0.0; t &lt;= 5e-9; t += 1e-12 {
+    pulse := Bpulse0 * exp(-((t-t0)*(t-t0))/(2.0*sigma*sigma))
+    B_ext = vector(Bbias, pulse, 0)
+    Run(1e-12)
+}</code></pre>
 
     <h2>Results</h2>
-    <div class="media-placeholder">
-      [ Plot: &alpha;<sub>eff</sub> vs. field / geometry ]
-    </div>
-    <p>[ Key findings in plain language ]</p>
+
+    <h3>Field dependence (L = 3 &micro;m)</h3>
+    <img class="media-full" src="../assets/img/micromagnetic-simulation/damping-vs-field.png" alt="Effective damping alpha_eff versus external bias field, compared to the intrinsic damping value">
+    <p>
+      At the lowest field (H = 1 kOe), &alpha;<sub>eff</sub> comes out to about 0.0156 &mdash; almost double
+      the intrinsic value. That tells me the system isn't behaving as one clean uniform mode at low bias;
+      other spin-wave modes and dephasing effects are contributing extra apparent damping. Push the field up
+      to 5&ndash;10 kOe and &alpha;<sub>eff</sub> drops to roughly 0.0087&ndash;0.0090, much closer to
+      intrinsic. That matches what I'd expect: a stronger bias field suppresses the non-uniform mode content
+      and forces the magnetization toward more uniform precession, so what I'm measuring gets closer to the
+      real material parameter. At high field (20&ndash;40 kOe), &alpha;<sub>eff</sub> levels off just above
+      intrinsic (&asymp;0.010) instead of continuing to converge. I don't think that's a real physical effect
+      &mdash; it's more likely a fitting-resolution limit, since the decay gets very fast and hard to fit
+      cleanly at high frequency. It's also the one place where my results diverge from the smoother,
+      monotonic trend in the reference paper.
+    </p>
+
+    <h3>Geometry dependence (H = 1 kOe)</h3>
+    <img class="media-full" src="../assets/img/micromagnetic-simulation/damping-vs-size.png" alt="Effective damping alpha_eff versus lateral sample size at fixed bias field">
+    <p>
+      Unlike the field sweep, the size dependence doesn't move in a straight line: &alpha;<sub>eff</sub> goes
+      from about 0.003 at L = 2 &micro;m up to about 0.018 at L = 6 &micro;m, alternating low and high rather
+      than trending smoothly. The reference paper also finds a geometry dependence at low field, but theirs
+      stays in a narrow, mildly-sloped band &mdash; nothing like this swing. Looking at the fit data, the two
+      lowest &alpha;<sub>eff</sub> points (L = 2 and L = 5 &micro;m) both come from relaxation times 4&ndash;5&times;
+      longer than their neighbors, which points to a poorly-constrained decay fit at those geometries rather
+      than a real physical effect. I ran this project on a time-limited allocation on a supercomputing cluster
+      I no longer have access to, so I haven't been able to go back and re-fit or re-run those cases with
+      tighter constraints &mdash; that's the clearest next step if I pick this back up.
+    </p>
+
+    <p class="reference-note">
+      Simulation approach and results benchmarked against: H.-S. Song, K.-D. Lee, C.-Y. You, B.-G. Park,
+      and J.-I. Hong, &ldquo;Geometric size effect on the extrinsic Gilbert damping in laterally confined
+      magnetic structures,&rdquo; <em>Journal of Magnetism and Magnetic Materials</em>, vol. 406, pp. 129&ndash;133, 2016.
+    </p>
 
   </div>
 

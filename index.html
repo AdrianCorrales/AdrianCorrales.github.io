@@ -44,13 +44,6 @@
         <p>Two-stage amplifier design (common-source + source follower) with measured and calculated gain.</p>
       </a>
 
-      <a class="project-card" href="projects/fpga-stopwatch.html">
-        <div class="thumb">[ demo GIF placeholder ]</div>
-        <h3>FPGA-Based Programmable Stopwatch/Timer</h3>
-        <div class="meta">Verilog, Basys3 — April 2026</div>
-        <p>Multi-mode stopwatch/timer built with RTL methodology, with real-time button/switch/display I/O.</p>
-      </a>
-
       <a class="project-card" href="projects/video-game.html">
         <div class="thumb"><img src="https://img.youtube.com/vi/Y0ssCxQxQ1Y/hqdefault.jpg" alt="Gameplay screenshot from the two-player soccer game"></div>
         <h3>C-Based Video Game</h3>
@@ -58,6 +51,35 @@
         <p>Two-player soccer game built with a partner, with a custom button/slide-pot/display I/O interface.</p>
       </a>
 
+      <a class="project-card project-card--no-thumb" href="projects/fpga-stopwatch.html">
+        <h3>FPGA-Based Programmable Stopwatch/Timer</h3>
+        <div class="meta">Verilog, Basys3 — April 2026</div>
+        <p>Multi-mode stopwatch/timer built with RTL methodology, with real-time button/switch/display I/O.</p>
+      </a>
+
+    </div>
+  </section>
+
+  <section id="fabrication">
+    <h2 class="section-title">Semiconductor Fabrication &amp; Characterization</h2>
+    <div class="resume-entry">
+      <div class="resume-entry__header">
+        <h3>Silicon Device Fabrication &amp; Electrical Characterization</h3>
+        <div class="meta">Cleanroom fab + probe-station testing — Spring 2026</div>
+      </div>
+      <ul>
+        <li>Fabricated resistors, diodes, MOSCAPs, and MOSFETs side-by-side on n- and p-type silicon dies from a shared Holberg mask set, then probed the finished devices on a manual wafer-probe station for electrical testing.</li>
+        <li>Extracted sheet resistance, contact resistance, and doping concentration from resistor and diode I-V/C-V sweeps; pulled threshold voltage, flat-band voltage, and oxide thickness from MOSCAP C-V curves; characterized MOSFET I<sub>D</sub>-V<sub>D</sub>/I<sub>D</sub>-V<sub>G</sub> families and transconductance across long-channel, short-channel, and thick-oxide device types.</li>
+        <li>Traced non-ideal electrical signatures (nonlinear resistor I-V, C-V dips, flat MOSCAP response) back to specific likely process causes &mdash; incomplete oxide formation, lithography misalignment, guard-ring shorts &mdash; rather than treating failed devices as unexplained.</li>
+        <li>Completed as part of a 5-person team; my work spanned probing devices at the station and contributing to the resistor and diode data/analysis in the joint report.</li>
+      </ul>
+      <figure class="single-media">
+        <img class="media-full" src="assets/img/fabrication/probe-station.png" alt="Micromanipulator probes landed on a die under test at the wafer-probe station">
+        <figcaption>Probing a die for I-V measurement on the wafer-probe station.</figcaption>
+      </figure>
+      <p class="reference-note">
+        <a href="assets/docs/characterization-report.pdf" target="_blank" rel="noopener">Full characterization report (PDF)</a> &mdash; group write-up covering all four device types.
+      </p>
     </div>
   </section>
 
